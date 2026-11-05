@@ -147,6 +147,14 @@ var stableBuffer: Bool {
 func extraDelayMs(_ uid: String) -> Int { prefs.integer(forKey: "delay." + uid) }
 func setExtraDelayMs(_ uid: String, _ ms: Int) { prefs.set(ms, forKey: "delay." + uid) }
 
+/// Наши общие выходы, включая «пустые», когда гарнитуры отключены (у них 0 каналов вывода).
+func ourAggregates() -> [AudioObjectID] {
+    allDevices().filter {
+        let uid = string($0, kAudioDevicePropertyDeviceUID)
+        return uid == aggUID || legacyAggUIDs.contains(uid)
+    }
+}
+
 func setNominalRate(_ id: AudioObjectID, _ rate: Double) {
     var a = addr(kAudioDevicePropertyNominalSampleRate)
     var cur: Float64 = 0
@@ -163,7 +171,7 @@ func setNominalRate(_ id: AudioObjectID, _ rate: Double) {
 @discardableResult
 func rebuildMultiOutput(makeDefault: Bool = true) -> String? {
     let devices = outputDevices()
-    for d in devices where d.uid == aggUID || legacyAggUIDs.contains(d.uid) { AudioHardwareDestroyAggregateDevice(d.id) }
+    for id in ourAggregates() { AudioHardwareDestroyAggregateDevice(id) }
     let bt = devices.filter { $0.isBluetooth }
     guard bt.count >= 2 else { return "Нужно минимум две подключённые Bluetooth-гарнитуры" }
 
@@ -292,9 +300,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
         // Старый общий выход мог быть собран с другими настройками: пересобираем по текущим.
-        let devices = outputDevices()
-        if let agg = devices.first(where: { $0.uid == aggUID || legacyAggUIDs.contains($0.uid) }) {
-            rebuildMultiOutput(makeDefault: agg.id == defaultOutput())
+        let ours = ourAggregates()
+        if !ours.isEmpty, outputDevices().filter(\.isBluetooth).count >= 2 {
+            rebuildMultiOutput(makeDefault: ours.contains(defaultOutput()))
         }
     }
 
